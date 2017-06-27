@@ -26,6 +26,7 @@ YOU WILL NEED TO REFERENCE THE API DOCUMENTATION
 from ctypes import *
 from os import chdir
 from enum import Enum
+from math import floor, ceil
 from time import perf_counter, strftime
 import numpy as np
 import threading, queue, serial, pynmea2, csv, sys
@@ -95,6 +96,8 @@ class GPS_Thread(threading.Thread):
                     print(d.decode('cp1252'))
                 d = self.gps.readline()
             msg = pynmea2.parse(d.decode('cp1252'))
+            # print(msg.latitude, msg.latitude_minutes)
+            # print(msg.longitude, msg.longitude_minutes)
             if int(msg.num_sats) < 1:
                 raise GPSError('No satellites locked.')
             # print('Thread duration: {}'.format(perf_counter()-t))
@@ -291,10 +294,18 @@ class Monitoring_Session:
             with open(self.fileName, 'a') as csvfile:
                 w = csv.writer(csvfile, lineterminator='\n')
                 # overrange, date, time, lat, long, alt, trace data
+                if msg.latitude < 0:
+                    lat = ceil(msg.latitude)
+                else:
+                    lat = floor(msg.latitude)
+                if msg.longitude < 0:
+                    long = ceil(msg.longitude)
+                else:
+                    long = floor(msg.longitude)
                 lat = '{:2.0f}\xb0{:2.0f}\'{:02.4f}"'.format(
-                    msg.latitude, msg.latitude_minutes, msg.latitude_seconds)
+                    lat, msg.latitude_minutes, msg.latitude_seconds)
                 lon = '{:2.0f}\xb0{:2.0f}\'{:02.4f}"'.format(
-                    msg.longitude, msg.longitude_minutes, msg.longitude_seconds)
+                    long, msg.longitude_minutes, msg.longitude_seconds)
                 if (self.traceInfo.acqDataStatus & 0x1) == 0:
                     w.writerow([self.traceInfo.acqDataStatus, strftime('%x'), 
                         msg.timestamp, lat, lon, 
@@ -393,14 +404,14 @@ def main():
     startFreq = 700
     stopFreq = 6200
     rbw = 10e6
-    traceLength = 64001
+    traceLength = 801
     vUnit = verticalUnits.dBm.name
     refLevel = 0
-    fileName = 'C:\\Users\\mallison\\Documents\\GitHub\\rsa_gps\\output.csv'
+    fileName = 'C:\\Users\\mallison\\Documents\\GitHub\\rsa_gps_project\\output.csv'
     comPort = 'COM12'   # COM12 for Holux GPS, COM3 for GPS simulator
     baudRate = 4800
     timeInterval = 3
-    numTests = 5
+    numTests = 1
 
     try:
         session = Monitoring_Session(startFreq, stopFreq, rbw, traceLength, 

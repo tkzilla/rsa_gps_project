@@ -147,7 +147,7 @@ class Window(QWidget):
         row += 1
         self.fileNameInput = QLineEdit(self)
         self.fileNameInput.setText(
-            'C:\\Users\\mallison\\Documents\\GitHub\\rsa_gps\\output.csv')
+            'C:\\Users\\mallison\\Documents\\GitHub\\rsa_gps_project\\output.csv')
         grid.addWidget(self.fileNameInput, row, col, Qt.AlignCenter)
 
         row += 1
@@ -186,8 +186,8 @@ class Window(QWidget):
             self.startButton.setEnabled(True)
             self.activate_settings(False)
 
-        except (RSAError, GPSError, AttributeError, PermissionError, 
-            serial.serialutil.SerialException) as err:
+        except (RSAError, GPSError, AttributeError, FileNotFoundError,
+                PermissionError, serial.serialutil.SerialException) as err:
             self.statusBar.showMessage(str(err), self.msgDuration)
 
 
@@ -202,8 +202,7 @@ class Window(QWidget):
             # print('Time interval: {}'.format(self.session.timeInterval))
         except AttributeError:
             raise
-            self.statusBar.showMessage(
-                'Run Setup before starting a capture session.')
+            self.statusBar.showMessage('Run Setup before starting a capture session.')
         except GPSError:
             raise
             self.statusBar.showMessage(GPSError)
