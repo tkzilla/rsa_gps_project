@@ -7,7 +7,7 @@ and writes them to a csv file.
 Tested using a Holux M-215+ USB GPS antenna and Tektronix RSA306B/RSA507A
 Author: Morgan Allison
 Date created: 3/17
-Date edited: 6/17
+Date edited: 7/17
 Windows 7 64-bit
 RSA_API version 3.9.0029
 Python 3.6.0 64-bit (Anaconda 4.3.0)
@@ -21,21 +21,31 @@ Download the RSA_API Documentation:
 http://www.tek.com/spectrum-analyzer/rsa306-manual-6
 
 YOU WILL NEED TO REFERENCE THE API DOCUMENTATION
+
+TODO:
+1. Track down 'Monitoring_Session' object has no attribute 'trace' error
+upon clicking 'Start' POSSIBLY SOLVED BY FIXING GPS SYNCH ERRORS
+
 """
 
 from ctypes import *
-from os import chdir
 from enum import Enum
 from math import floor, ceil
 from time import perf_counter, strftime
 import numpy as np
-import threading, queue, serial, pynmea2, csv, sys
+import threading, queue, serial, pynmea2, csv, sys, os
 
 # C:\Tektronix\RSA_API\lib\x64 needs to be added to the 
 # PATH system environment variable
-chdir("C:\\Tektronix\\RSA_API\\lib\\x64")
-rsa = cdll.LoadLibrary("RSA_API.dll")
+# chdir("C:\\Tektronix\\RSA_API\\lib\\x64")
 
+if "C:\\Tektronix\\RSA_API\\lib\\x64" not in os.environ['PATH']:
+    # raise(Exception('C:\Tektronix\RSA_API\lib\x64 needs to be added to the '
+    #                 'PATH system environment variable'))
+    print('C:\Tektronix\RSA_API\lib\x64 needs to be added to the '
+                    'PATH system environment variable')
+    os.environ['PATH'] += os.pathsep + "C:\\Tektronix\\RSA_API\\lib\\x64"
+rsa = cdll.LoadLibrary("C:\\Tektronix\\RSA_API\\lib\\x64\\RSA_API.dll")
 
 class Spectrum_Settings(Structure):
     _fields_ = [('span', c_double),
@@ -82,29 +92,23 @@ class GPS_Thread(threading.Thread):
         self.gps = gps
         self.q = q
         self._stop = threading.Event()
-        # self.dur = []
     
     def stop(self):
         self._stop.set()
     
     def stop_check(self):
         return self._stop.isSet()
-    
+
     def run(self):
         while not self.stop_check():
+            # t = perf_counter()
             d = self.gps.readline()
-            while not d.decode('cp1252').startswith('$GPGGA,') or len(d) > 80:
-                if len(d) > 80:
-                    print(d.decode('cp1252'))
+            while not d.decode('latin_1').startswith('$GPGGA,'):
                 d = self.gps.readline()
-            msg = pynmea2.parse(d.decode('cp1252'))
-            # print(msg.latitude, msg.latitude_minutes)
-            # print(msg.longitude, msg.longitude_minutes)
+            msg = pynmea2.parse(d.decode('latin_1'))
             if int(msg.num_sats) < 1:
                 raise GPSError('No satellites locked.')
             # print('Thread duration: {}'.format(perf_counter()-t))
-            # self.dur.append(perf_counter()-t)
-            # print('Average thread duration: {}'.format(np.mean(self.dur)))
             self.q.put(msg)
         self.gps.close()
 
@@ -146,9 +150,6 @@ class Monitoring_Session:
         intArray = c_int * 10
         deviceIDs = intArray()
         
-        rsa.DEVICE_GetAPIVersion(self.apiVersion)
-        # print('API Version {}'.format(apiVersion.value.decode()))
-        
         ret = rsa.DEVICE_Search(byref(numFound), deviceIDs,
                                 self.deviceSerial, self.deviceType)
         if ret != 0:
@@ -164,7 +165,7 @@ class Monitoring_Session:
                     self.statusText = 'Error: {}.'.format(ret)
                     # raise RSAError(self.statusText)
                     rsa.DEVICE_Reset()
-            self.statusText = 'Connected to {}, S/N {}.'.format(
+            self.statusText = 'Connected to {}, S/N {}. Ready to acquire.'.format(
                 self.deviceType.value.decode(),
                 self.deviceSerial.value.decode())
             rsa.CONFIG_Preset()
@@ -178,7 +179,7 @@ class Monitoring_Session:
             raise RSAError('No RSA connected. Please connect to continue.')
     
     def convert_reference_level(self):
-        # since CONFIG_SetReferenceLevel() argument is in dBm, convert 
+        # since CONFIG_SetReferenceLevel() argument is in dBm, convert
         # from other units
         if self.verticalUnit == 'dBm':
             pass
@@ -246,7 +247,7 @@ class Monitoring_Session:
         # tests device in selected COM port to see if it returns data
         try:
             self.gps = serial.Serial(self.comPort, baudrate=self.baudRate,
-                                     timeout=1)
+                                     timeout=2)
             self.gps.flush()
             if not self.gps.readline():
                 raise GPSError('{} returns no data.'.format(self.comPort))
@@ -254,17 +255,20 @@ class Monitoring_Session:
             raise
     
     def pause(self):
-        while (perf_counter() - self.startTime) < self.timeInterval:
+        # while (perf_counter() - self.startTime) < self.timeInterval:
+        while self.q.qsize() > 1:
+            print(self.q.qsize())
             self.q.get()
     
+    # unused, see GPS_Thread class
     def get_gga_sentence(self):
         # self.gps.flush()
         d = self.gps.readline()
-        while not d.decode('cp1252').startswith('$GPGGA,') or len(d) > 80:
+        while not d.decode('latin_1').startswith('$GPGGA,') or len(d) > 80:
             if len(d) > 80:
-                print(d.decode('cp1252'))
+                print(d.decode('latin_1'))
             d = self.gps.readline()
-        msg = pynmea2.parse(d.decode('cp1252'))
+        msg = pynmea2.parse(d.decode('latin_1'))
         if int(msg.num_sats) < 1:
             raise GPSError('No satellites locked.')
         return msg
@@ -274,15 +278,17 @@ class Monitoring_Session:
         # reference level, COM port for GPS antenna, and acquisition time interval
         # verticalUnit: 0=dBm, 1=Watt, 2=Volt, 3=Amp, 4=dBmV
         # self.startTime = perf_counter()
-        
+    
         try:
-            self.startTime = perf_counter()
+            # self.startTime = perf_counter()
             self.trace = acquire_spectrum(self.specSet)
             rsa.SPECTRUM_GetTraceInfo(byref(self.traceInfo))
-            msg = self.q.get()
-            print(msg)
+            msg = self.q.get(block=True, timeout=self.timeInterval*2)
+            # print(msg)
         except pynmea2.nmea.ChecksumError:
             self.operation()
+        except queue.Empty as err:
+            raise
         except GPSError:
             raise
         # t2 = perf_counter()-self.startTime
@@ -319,9 +325,9 @@ class Monitoring_Session:
             self.statusText = 'File not found.'
             raise
         # t3 = perf_counter()-self.startTime
-        # print('Spectrum capture time: {}\nTime Remaining: {}'.format(t2, 
+        # print('Spectrum capture time: {}\nTime Remaining: {}'.format(t2,
         #     self.timeInterval-t2))
-        # print('Output time: {}\nTime Remaining: {}'.format(t3-t2, 
+        # print('Output time: {}\nTime Remaining: {}'.format(t3-t2,
         #     self.timeInterval-t3))
         print(msg.timestamp)
         # self.pause()
@@ -397,7 +403,8 @@ def list_serial_ports():
 
 
 def main():
-    # Demo script
+    # Demo script, not currently operational due to multithreading
+    # requirements satisfied by rsa_gps_gui.py
     startFreq = 700
     stopFreq = 6200
     rbw = 10e6

@@ -7,7 +7,7 @@ and writes them to a csv file.
 Tested using a Holux M-215+ USB GPS antenna and Tektronix RSA306B/RSA507A
 Author: Morgan Allison
 Date created: 3/17
-Date edited: 6/17
+Date edited: 7/17
 Windows 7 64-bit
 RSA API version 3.9.0029
 Python 3.6.0 64-bit (Anaconda 4.3.0)
@@ -26,20 +26,9 @@ from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
 from PyQt5.QtCore import *
 from rsa_gps_backend import *
-from os import chdir
 
-"""
-################################################################
-C:\Tektronix\RSA_API\lib\x64 needs to be added to the 
-PATH system environment variable
-################################################################
-"""
-chdir("C:\\Tektronix\\RSA_API\\lib\\x64")
-rsa = cdll.LoadLibrary("RSA_API.dll")
 
 """#################CLASSES AND FUNCTIONS#################"""
-
-
 class Window(QWidget):
     def __init__(self):
         # getting parent object
@@ -146,7 +135,7 @@ class Window(QWidget):
         row += 1
         self.fileNameInput = QLineEdit(self)
         self.fileNameInput.setText(
-            'C:\\Users\\mallison\\Documents\\GitHub\\rsa_gps_project\\output.csv')
+            'output.csv')
         grid.addWidget(self.fileNameInput, row, col, Qt.AlignCenter)
         
         row += 1
@@ -162,6 +151,7 @@ class Window(QWidget):
         
         self.acqTimer = QTimer()
         self.acqTimer.timeout.connect(self.operation)
+        self.acqTimer.stop()
         self.acqCounter = 1
         
         startFreq = float(self.startFInput.text())
@@ -184,12 +174,20 @@ class Window(QWidget):
             self.session.setup()
             self.startButton.setEnabled(True)
             self.activate_settings(False)
+            # self.queueTimer = QTimer()
+            # self.queueTimer.timeout.connect(self.session.pause)
+            # self.queueTimer.start(500)
+            # self.statusBar.showMessage('Ready to start acquisition.')
         
         except (RSAError, GPSError, AttributeError, FileNotFoundError,
                 PermissionError, serial.serialutil.SerialException) as err:
             self.statusBar.showMessage(str(err), self.msgDuration)
-    
+        # except:
+        #     self.statusBar.showMessage(str(err), self.msgDuration)
+        #     raise
+        
     def operation(self):
+        # self.queueTimer.stop()
         self.statusBar.showMessage('Capturing acquisition {}'.format(
             self.acqCounter), self.msgDuration)
         self.acqCounter += 1
