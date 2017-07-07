@@ -297,18 +297,18 @@ class Monitoring_Session:
             with open(self.fileName, 'a') as csvfile:
                 w = csv.writer(csvfile, lineterminator='\n')
                 # overrange, date, time, lat, long, alt, trace data
-                if msg.latitude < 0:
-                    lat = ceil(msg.latitude)
-                else:
-                    lat = floor(msg.latitude)
-                if msg.longitude < 0:
-                    long = ceil(msg.longitude)
-                else:
-                    long = floor(msg.longitude)
-                lat = '{:2.0f}\xb0{:2.0f}\'{:02.4f}"'.format(
-                    lat, msg.latitude_minutes, msg.latitude_seconds)
-                lon = '{:2.0f}\xb0{:2.0f}\'{:02.4f}"'.format(
-                    long, msg.longitude_minutes, msg.longitude_seconds)
+                latCorr = ceil(msg.latitude) if msg.latitude < 0 else floor(
+                    msg.latitude)
+                # print('Lat: ', msg.latitude)
+                # print('LatCorr: ', latCorr)
+                lonCorr = ceil(msg.longitude) if msg.longitude < 0 else floor(
+                    msg.longitude)
+                # print('Long: ', msg.longitude)
+                # print('LonCorr: ', lonCorr)
+                lat = '{:2.0f}\xb0{}\'{:02.4f}"'.format(
+                    latCorr, int(msg.latitude_minutes), msg.latitude_seconds)
+                lon = '{:2.0f}\xb0{}\'{:02.4f}"'.format(
+                    lonCorr, int(msg.longitude_minutes), msg.longitude_seconds)
                 if (self.traceInfo.acqDataStatus & 0x1) == 0:
                     w.writerow([self.traceInfo.acqDataStatus, strftime('%x'),
                                 msg.timestamp, lat, lon,
