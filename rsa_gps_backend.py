@@ -21,11 +21,6 @@ Download the RSA_API Documentation:
 http://www.tek.com/spectrum-analyzer/rsa306-manual-6
 
 YOU WILL NEED TO REFERENCE THE API DOCUMENTATION
-
-TODO:
-1. Track down 'Monitoring_Session' object has no attribute 'trace' error
-upon clicking 'Start' POSSIBLY SOLVED BY FIXING GPS SYNCH ERRORS
-
 """
 
 from ctypes import *
@@ -35,14 +30,12 @@ from time import perf_counter, strftime
 import numpy as np
 import threading, queue, serial, pynmea2, csv, sys, os
 
-# C:\Tektronix\RSA_API\lib\x64 needs to be added to the 
+# C:\Tektronix\RSA_API\lib\x64 needs to be added to the
 # PATH system environment variable
 # chdir("C:\\Tektronix\\RSA_API\\lib\\x64")
 
 if "C:\\Tektronix\\RSA_API\\lib\\x64" not in os.environ['PATH']:
-    # raise(Exception('C:\Tektronix\RSA_API\lib\x64 needs to be added to the '
-    #                 'PATH system environment variable'))
-    print('C:\Tektronix\RSA_API\lib\x64 needs to be added to the '
+    print('C:\\Tektronix\\RSA_API\\lib\\x64 needs to be added to the '
                     'PATH system environment variable')
     os.environ['PATH'] += os.pathsep + "C:\\Tektronix\\RSA_API\\lib\\x64"
 rsa = cdll.LoadLibrary("C:\\Tektronix\\RSA_API\\lib\\x64\\RSA_API.dll")
@@ -84,9 +77,9 @@ class verticalUnits(Enum):
     dBmV = 4
 
 
-class GPS_Thread(threading.Thread):
+class GPSThread(threading.Thread):
     def __init__(self, threadID, name, gps, q):
-        threading.Thread.__init__(self, daemon=True)
+        threading.Thread.__init__(self)
         self.threadID = threadID
         self.name = name
         self.gps = gps
@@ -102,14 +95,11 @@ class GPS_Thread(threading.Thread):
     def run(self):
         while not self.stop_check():
             # t = perf_counter()
-            d = self.gps.readline()
-            while not d.decode('latin_1').startswith('$GPGGA,'):
-                d = self.gps.readline()
-            msg = pynmea2.parse(d.decode('latin_1'))
-            if int(msg.num_sats) < 1:
-                raise GPSError('No satellites locked.')
+            raw = self.gps.readline()
+            while not raw.decode('latin_1').startswith('$GPGGA,'):
+                raw = self.gps.readline()
             # print('Thread duration: {}'.format(perf_counter()-t))
-            self.q.put(msg)
+            self.q.put(raw.decode('latin_1'), block=True, timeout=1)
         self.gps.close()
 
 
@@ -133,7 +123,8 @@ class Monitoring_Session:
         self.specSet = Spectrum_Settings()
         self.traceInfo = Spectrum_TraceInfo()
         self.statusText = ''
-        self.q = queue.LifoQueue()
+        self.q = queue.Queue()
+        self.lastTimestamp = None
         
         try:
             self.search_connect()
@@ -163,7 +154,6 @@ class Monitoring_Session:
                 ret = rsa.DEVICE_Connect(deviceIDs[0])
                 if ret != 0:
                     self.statusText = 'Error: {}.'.format(ret)
-                    # raise RSAError(self.statusText)
                     rsa.DEVICE_Reset()
             self.statusText = 'Connected to {}, S/N {}. Ready to acquire.'.format(
                 self.deviceType.value.decode(),
@@ -173,10 +163,10 @@ class Monitoring_Session:
             # corner case
             raise RSAError('Error: 2 or more instruments found.')
     
-    def check_connect(self):
-        ret = rsa.DEVICE_StartFrameTransfer()
-        if ret != 0:
-            raise RSAError('No RSA connected. Please connect to continue.')
+    # def check_connect(self):
+    #     ret = rsa.DEVICE_StartFrameTransfer()
+    #     if ret != 0:
+    #         raise RSAError('No RSA connected. Please connect to continue.')
     
     def convert_reference_level(self):
         # since CONFIG_SetReferenceLevel() argument is in dBm, convert
@@ -238,9 +228,8 @@ class Monitoring_Session:
         try:
             self.output_file_header()
             self.gps_setup()
-            self.gpsThread = GPS_Thread(0, 'gpsThread', self.gps, self.q)
-            self.gpsThread.start()
-        except PermissionError:
+            self.gpsThread = GPSThread(0, 'gpsThread', self.gps, self.q)
+        except (PermissionError, GPSError):
             raise
     
     def gps_setup(self):
@@ -251,47 +240,44 @@ class Monitoring_Session:
             self.gps.flush()
             if not self.gps.readline():
                 raise GPSError('{} returns no data.'.format(self.comPort))
-        except PermissionError:
+            raw = self.gps.readline()
+            while not raw.decode('latin_1').startswith('$GPGGA,'):
+                raw = self.gps.readline()
+            msg = pynmea2.parse(raw.decode('latin_1'))
+            if int(msg.num_sats) < 1:
+                raise GPSError('No satellites locked.')
+        except (PermissionError, GPSError):
             raise
     
-    def pause(self):
-        # while (perf_counter() - self.startTime) < self.timeInterval:
-        while self.q.qsize() > 1:
-            print(self.q.qsize())
-            self.q.get()
-    
-    # unused, see GPS_Thread class
-    def get_gga_sentence(self):
-        # self.gps.flush()
-        d = self.gps.readline()
-        while not d.decode('latin_1').startswith('$GPGGA,') or len(d) > 80:
-            if len(d) > 80:
-                print(d.decode('latin_1'))
-            d = self.gps.readline()
-        msg = pynmea2.parse(d.decode('latin_1'))
-        if int(msg.num_sats) < 1:
-            raise GPSError('No satellites locked.')
-        return msg
+    # def pause(self):
+    #     while (perf_counter() - self.startTime) < self.timeInterval:
+        # while self.q.qsize() > 1:
+        #     print(self.q.qsize())
+        #     self.q.get()
     
     def operation(self):
         # User-defined start/stop freq (MHz), RBW, trace points, vertical units,
         # reference level, COM port for GPS antenna, and acquisition time interval
         # verticalUnit: 0=dBm, 1=Watt, 2=Volt, 3=Amp, 4=dBmV
-        # self.startTime = perf_counter()
-    
+        
         try:
-            # self.startTime = perf_counter()
+            msg = pynmea2.parse(self.q.get(block=True, timeout=self.timeInterval*2))
+            if self.lastTimestamp != None:
+                tsl = (msg.timestamp.second - self.lastTimestamp.second)%60
+                # when timeInterval > 1 second or when spectrum time > timeInterval
+                while tsl < self.timeInterval or (tsl >= self.timeInterval and self.q.qsize() > 0):
+                    msg = pynmea2.parse(self.q.get(block=True, timeout=self.timeInterval * 2))
+                    tsl = (msg.timestamp.second - self.lastTimestamp.second) % 60
+            self.lastTimestamp = msg.timestamp
             self.trace = acquire_spectrum(self.specSet)
             rsa.SPECTRUM_GetTraceInfo(byref(self.traceInfo))
-            msg = self.q.get(block=True, timeout=self.timeInterval*2)
-            # print(msg)
         except pynmea2.nmea.ChecksumError:
+            print('checksum error')
             self.operation()
         except queue.Empty as err:
             raise
         except GPSError:
             raise
-        # t2 = perf_counter()-self.startTime
         twoDigitTrace = list('{:.2f}'.format(point) for point in self.trace)
         try:
             with open(self.fileName, 'a') as csvfile:
@@ -299,12 +285,8 @@ class Monitoring_Session:
                 # overrange, date, time, lat, long, alt, trace data
                 latCorr = ceil(msg.latitude) if msg.latitude < 0 else floor(
                     msg.latitude)
-                # print('Lat: ', msg.latitude)
-                # print('LatCorr: ', latCorr)
                 lonCorr = ceil(msg.longitude) if msg.longitude < 0 else floor(
                     msg.longitude)
-                # print('Long: ', msg.longitude)
-                # print('LonCorr: ', lonCorr)
                 lat = '{:2.0f}\xb0{}\'{:02.4f}"'.format(
                     latCorr, int(msg.latitude_minutes), msg.latitude_seconds)
                 lon = '{:2.0f}\xb0{}\'{:02.4f}"'.format(
@@ -324,13 +306,7 @@ class Monitoring_Session:
         except FileNotFoundError:
             self.statusText = 'File not found.'
             raise
-        # t3 = perf_counter()-self.startTime
-        # print('Spectrum capture time: {}\nTime Remaining: {}'.format(t2,
-        #     self.timeInterval-t2))
-        # print('Output time: {}\nTime Remaining: {}'.format(t3-t2,
-        #     self.timeInterval-t3))
         print(msg.timestamp)
-        # self.pause()
 
 
 def config_spectrum(cf=1e9, refLevel=0, span=40e6, rbw=300e3,
@@ -353,13 +329,13 @@ def config_spectrum(cf=1e9, refLevel=0, span=40e6, rbw=300e3,
     return specSet
 
 
-def create_frequency_array(specSet):
-    # Create array of frequency data for plotting the spectrum.
-    # Unused in demo script
-    freq = np.arange(specSet.actualStartFreq, specSet.actualStartFreq
-                     + specSet.actualFreqStepSize * specSet.traceLength,
-                     specSet.actualFreqStepSize)
-    return freq
+# def create_frequency_array(specSet):
+#     Create array of frequency data for plotting the spectrum.
+#     Unused in demo script
+    # freq = np.arange(specSet.actualStartFreq, specSet.actualStartFreq
+    #                  + specSet.actualFreqStepSize * specSet.traceLength,
+    #                  specSet.actualFreqStepSize)
+    # return freq
 
 
 def acquire_spectrum(specSet):
@@ -411,10 +387,10 @@ def main():
     traceLength = 801
     vUnit = verticalUnits.dBm.name
     refLevel = 0
-    fileName = 'C:\\Users\\mallison\\Documents\\GitHub\\rsa_gps_project\\output.csv'
-    comPort = 'COM12'  # COM12 for Holux GPS, COM3 for GPS simulator
+    fileName = 'output.csv'
+    comPort = 'COM16'  # COM16 for Holux GPS, COM3 for GPS simulator
     baudRate = 4800
-    timeInterval = 3
+    timeInterval = 1
     numTests = 1
     
     try:
@@ -423,14 +399,13 @@ def main():
                                      baudRate, timeInterval)
         print(session.statusText)
         session.setup()
+        session.gpsThread.start()
         for i in range(numTests):
-            # sleep(session.timeInterval)
+            start = perf_counter()
             print('Capturing spectrum', i + 1)
             session.operation()
-            session.pause()
-            # if i == 1:
-            #   session.gpsThread.stop()
-            #   print(session.msg.timestamp)
+            while perf_counter()-start < session.timeInterval:
+                print(perf_counter()-start)
     except (RSAError, GPSError, PermissionError, UnboundLocalError) as err:
         print(err)
 

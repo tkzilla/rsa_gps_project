@@ -90,12 +90,12 @@ class Window(QWidget):
         row += 1
         self.stopFInput = QLineEdit(self)
         self.stopFInput.setValidator(QDoubleValidator())
-        self.stopFInput.setText('1020')
+        self.stopFInput.setText('6200')
         grid.addWidget(self.stopFInput, row, col, Qt.AlignCenter)
         
         row += 1
         self.rbwInput = QLineEdit(self)
-        self.rbwInput.setText('10000')
+        self.rbwInput.setText('1000')
         self.rbwInput.setValidator(QDoubleValidator())
         grid.addWidget(self.rbwInput, row, col, Qt.AlignCenter)
         
@@ -170,32 +170,21 @@ class Window(QWidget):
                                               traceLength, verticalUnit,
                                               refLevel, fileName, comPort,
                                               baudRate, timeInterval)
-            self.statusBar.showMessage(self.session.statusText)
             self.session.setup()
             self.startButton.setEnabled(True)
             self.activate_settings(False)
-            # self.queueTimer = QTimer()
-            # self.queueTimer.timeout.connect(self.session.pause)
-            # self.queueTimer.start(500)
-            # self.statusBar.showMessage('Ready to start acquisition.')
+            self.statusBar.showMessage(self.session.statusText)
         
         except (RSAError, GPSError, AttributeError, FileNotFoundError,
                 PermissionError, serial.serialutil.SerialException) as err:
             self.statusBar.showMessage(str(err), self.msgDuration)
-        # except:
-        #     self.statusBar.showMessage(str(err), self.msgDuration)
-        #     raise
         
     def operation(self):
-        # self.queueTimer.stop()
         self.statusBar.showMessage('Capturing acquisition {}'.format(
             self.acqCounter), self.msgDuration)
         self.acqCounter += 1
         try:
             self.session.operation()
-            # print(self.session.msg.timestamp)
-            # print('Elapsed time: {}'.format(perf_counter()-t1))
-            # print('Time interval: {}'.format(self.session.timeInterval))
         except AttributeError:
             self.statusBar.showMessage(
                 'Run Setup before starting a capture session.')
@@ -218,6 +207,7 @@ class Window(QWidget):
         self.setupButton.setEnabled(active)
     
     def start(self):
+        self.session.gpsThread.start()
         self.operation()
         self.acqTimer.start(self.session.timeInterval * 1000)
         self.activate_settings(False)
@@ -228,12 +218,9 @@ class Window(QWidget):
         self.statusBar.showMessage('Acquisition stopped', self.msgDuration)
         self.activate_settings(True)
         self.stopButton.setEnabled(False)
-        # self.startButton.setEnabled(True)
         self.acqTimer.stop()
         self.session.gpsThread.stop()
         rsa.DEVICE_Stop()
-        while not self.session.q.empty():
-            self.session.q.get()
     
     def check_rsa_connection(self):
         try:
