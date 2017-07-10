@@ -90,12 +90,12 @@ class Window(QWidget):
         row += 1
         self.stopFInput = QLineEdit(self)
         self.stopFInput.setValidator(QDoubleValidator())
-        self.stopFInput.setText('6200')
+        self.stopFInput.setText('1020')
         grid.addWidget(self.stopFInput, row, col, Qt.AlignCenter)
         
         row += 1
         self.rbwInput = QLineEdit(self)
-        self.rbwInput.setText('1000')
+        self.rbwInput.setText('10000')
         self.rbwInput.setValidator(QDoubleValidator())
         grid.addWidget(self.rbwInput, row, col, Qt.AlignCenter)
         
