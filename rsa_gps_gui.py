@@ -192,6 +192,8 @@ class Window(QWidget):
         except GPSError:
             self.statusBar.showMessage(GPSError)
             raise
+        except queue.Empty:
+            self.statusBar.showMessage('Queue is empty, waiting for next acquisition.')
     
     def activate_settings(self, active):
         self.startFInput.setEnabled(active)

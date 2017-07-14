@@ -272,11 +272,9 @@ class Monitoring_Session:
             self.trace = acquire_spectrum(self.specSet)
             rsa.SPECTRUM_GetTraceInfo(byref(self.traceInfo))
         except pynmea2.nmea.ChecksumError:
-            print('checksum error')
+            print('NMEA Checksum error.')
             self.operation()
-        except queue.Empty as err:
-            raise
-        except GPSError:
+        except (queue.Empty, GPSError):
             raise
         twoDigitTrace = list('{:.2f}'.format(point) for point in self.trace)
         try:
@@ -300,11 +298,7 @@ class Monitoring_Session:
                     w.writerow([self.traceInfo.acqDataStatus, strftime('%x'),
                                 msg.timestamp, lat, lon,
                                 msg.altitude, msg.altitude_units])
-        except PermissionError:
-            self.statusText = 'Permission error. Output .csv file is in use.'
-            raise
-        except FileNotFoundError:
-            self.statusText = 'File not found.'
+        except (PermissionError, FileNotFoundError) as err:
             raise
         print(msg.timestamp)
 
@@ -380,9 +374,9 @@ def list_serial_ports():
 
 def main():
     # Demo script, not currently operational due to multithreading
-    # requirements satisfied by rsa_gps_gui.py
-    startFreq = 700
-    stopFreq = 6200
+    # and timing requirements satisfied by rsa_gps_gui.py
+    startFreq = 980
+    stopFreq = 1020
     rbw = 10e6
     traceLength = 801
     vUnit = verticalUnits.dBm.name
@@ -391,7 +385,7 @@ def main():
     comPort = 'COM16'  # COM16 for Holux GPS, COM3 for GPS simulator
     baudRate = 4800
     timeInterval = 1
-    numTests = 1
+    numTests = 3
     
     try:
         session = Monitoring_Session(startFreq, stopFreq, rbw, traceLength,
@@ -405,7 +399,8 @@ def main():
             print('Capturing spectrum', i + 1)
             session.operation()
             while perf_counter()-start < session.timeInterval:
-                print(perf_counter()-start)
+                pass
+        session.gps.close()
     except (RSAError, GPSError, PermissionError, UnboundLocalError) as err:
         print(err)
 
