@@ -1,7 +1,7 @@
 """
 RSA GPS Backend
 This project connects to a USB RSA and USB GPS antenna
-and requests a spectrum trace, latitude, longitude, 
+and requests a spectrum trace, latitude, longitude,
 altitude, and timestamp at a user-defined interval
 and writes them to a csv file.
 Tested using a Holux M-215+ USB GPS antenna and Tektronix RSA306B/RSA507A
@@ -28,7 +28,13 @@ from enum import Enum
 from math import floor, ceil
 from time import perf_counter, strftime
 import numpy as np
-import threading, queue, serial, pynmea2, csv, sys, os
+import threading
+import queue
+import serial
+import pynmea2
+import csv
+import sys
+import os
 
 # C:\Tektronix\RSA_API\lib\x64 needs to be added to the
 # PATH system environment variable
@@ -36,9 +42,10 @@ import threading, queue, serial, pynmea2, csv, sys, os
 
 if "C:\\Tektronix\\RSA_API\\lib\\x64" not in os.environ['PATH']:
     print('C:\\Tektronix\\RSA_API\\lib\\x64 needs to be added to the '
-                    'PATH system environment variable')
+          'PATH system environment variable')
     os.environ['PATH'] += os.pathsep + "C:\\Tektronix\\RSA_API\\lib\\x64"
 rsa = cdll.LoadLibrary("C:\\Tektronix\\RSA_API\\lib\\x64\\RSA_API.dll")
+
 
 class Spectrum_Settings(Structure):
     _fields_ = [('span', c_double),
@@ -85,10 +92,10 @@ class GPSThread(threading.Thread):
         self.gps = gps
         self.q = q
         self._stop = threading.Event()
-    
+
     def stop(self):
         self._stop.set()
-    
+
     def stop_check(self):
         return self._stop.isSet()
 
@@ -125,7 +132,7 @@ class Monitoring_Session:
         self.statusText = ''
         self.q = queue.Queue()
         self.lastTimestamp = None
-        
+
         try:
             self.search_connect()
         except RSAError:
@@ -134,18 +141,18 @@ class Monitoring_Session:
             pass
         finally:
             pass
-    
+
     def search_connect(self):
         # Searches for and connects to an RSA device
         numFound = c_int(0)
         intArray = c_int * 10
         deviceIDs = intArray()
-        
+
         ret = rsa.DEVICE_Search(byref(numFound), deviceIDs,
                                 self.deviceSerial, self.deviceType)
         if ret != 0:
             raise RSAError('Error: {}'.format(ret))
-        
+
         if numFound.value < 1:
             raise RSAError('Error: No instruments found.')
         elif numFound.value == 1:
@@ -162,12 +169,12 @@ class Monitoring_Session:
         else:
             # corner case
             raise RSAError('Error: 2 or more instruments found.')
-    
+
     # def check_connect(self):
     #     ret = rsa.DEVICE_StartFrameTransfer()
     #     if ret != 0:
     #         raise RSAError('No RSA connected. Please connect to continue.')
-    
+
     def convert_reference_level(self):
         # since CONFIG_SetReferenceLevel() argument is in dBm, convert
         # from other units
@@ -184,7 +191,7 @@ class Monitoring_Session:
         else:
             # raise an exception here
             print('Invalid verticalUnit, unable to convert to dBm.')
-    
+
     def output_file_header(self):
         # Writes the header for the output csv file
         try:
@@ -212,7 +219,7 @@ class Monitoring_Session:
         except FileNotFoundError:
             self.statusText = 'File not found.'
             raise
-    
+
     def setup(self):
         # Sets spectrum settings on the RSA
         # start freq, stop freq, ref level, rbw, trace length, and units
@@ -231,7 +238,7 @@ class Monitoring_Session:
             self.gpsThread = GPSThread(0, 'gpsThread', self.gps, self.q)
         except (PermissionError, GPSError):
             raise
-    
+
     def gps_setup(self):
         # tests device in selected COM port to see if it returns data
         try:
@@ -248,22 +255,22 @@ class Monitoring_Session:
                 raise GPSError('No satellites locked.')
         except (PermissionError, GPSError):
             raise
-    
+
     # def pause(self):
     #     while (perf_counter() - self.startTime) < self.timeInterval:
         # while self.q.qsize() > 1:
         #     print(self.q.qsize())
         #     self.q.get()
-    
+
     def operation(self):
         # User-defined start/stop freq (MHz), RBW, trace points, vertical units,
         # reference level, COM port for GPS antenna, and acquisition time interval
         # verticalUnit: 0=dBm, 1=Watt, 2=Volt, 3=Amp, 4=dBmV
-        
+
         try:
-            msg = pynmea2.parse(self.q.get(block=True, timeout=self.timeInterval*2))
-            if self.lastTimestamp != None:
-                tsl = (msg.timestamp.second - self.lastTimestamp.second)%60
+            msg = pynmea2.parse(self.q.get(block=True, timeout=self.timeInterval * 2))
+            if self.lastTimestamp is not None:
+                tsl = (msg.timestamp.second - self.lastTimestamp.second) % 60
                 # when timeInterval > 1 second or when spectrum time > timeInterval
                 while tsl < self.timeInterval or (tsl >= self.timeInterval and self.q.qsize() > 0):
                     msg = pynmea2.parse(self.q.get(block=True, timeout=self.timeInterval * 2))
@@ -307,7 +314,7 @@ def config_spectrum(cf=1e9, refLevel=0, span=40e6, rbw=300e3,
                     traceLength=801, verticalUnit=verticalUnits.dBm.name):
     # Configures spectrum settings on the RSA
     vUnit = {'dBm': 0, 'W': 1, 'Vrms': 2, 'Arms': 3, 'dBmV': 4}[verticalUnit]
-    
+
     rsa.SPECTRUM_SetEnable(c_bool(True))
     rsa.CONFIG_SetCenterFreq(c_double(cf))
     rsa.CONFIG_SetReferenceLevel(c_double(refLevel))
@@ -338,7 +345,7 @@ def acquire_spectrum(specSet):
     traceArray = c_float * specSet.traceLength
     traceData = traceArray()
     outTracePoints = c_int(0)
-    
+
     rsa.DEVICE_Run()
     rsa.SPECTRUM_AcquireTrace()
     while not ready.value:
@@ -360,7 +367,7 @@ def list_serial_ports():
         ports = glob.glob('/dev/tty.*')
     else:
         raise EnvironmentError('Unsupported platform.')
-    
+
     result = []
     for port in ports:
         try:
@@ -386,7 +393,7 @@ def main():
     baudRate = 4800
     timeInterval = 1
     numTests = 3
-    
+
     try:
         session = Monitoring_Session(startFreq, stopFreq, rbw, traceLength,
                                      vUnit, refLevel, fileName, comPort,
@@ -398,7 +405,7 @@ def main():
             start = perf_counter()
             print('Capturing spectrum', i + 1)
             session.operation()
-            while perf_counter()-start < session.timeInterval:
+            while perf_counter() - start < session.timeInterval:
                 pass
         session.gps.close()
     except (RSAError, GPSError, PermissionError, UnboundLocalError) as err:

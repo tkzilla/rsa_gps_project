@@ -1,7 +1,7 @@
 """
 RSA GPS GUI
 This project connects to a USB RSA and USB GPS antenna
-and requests a spectrum trace, latitude, longitude, 
+and requests a spectrum trace, latitude, longitude,
 altitude, and timestamp at a user-defined interval
 and writes them to a csv file.
 Tested using a Holux M-215+ USB GPS antenna and Tektronix RSA306B/RSA507A
@@ -29,15 +29,17 @@ from rsa_gps_backend import *
 
 
 """#################CLASSES AND FUNCTIONS#################"""
+
+
 class Window(QWidget):
     def __init__(self):
         # getting parent object
         super().__init__()
         self.setGeometry(50, 50, 400, 400)
         self.setWindowTitle('Session Setup')
-        
+
         self.initUI()
-    
+
     def initUI(self):
         # Monitoring session setup GUI
         self.msgDuration = 3000
@@ -53,107 +55,107 @@ class Window(QWidget):
             label.setText(name)
             grid.addWidget(label, row, col, Qt.AlignCenter)
             row += 1
-        
+
         row += 1
         self.setupButton = QPushButton(self)
         self.setupButton.setText('Setup')
         self.setupButton.clicked.connect(self.setup)
         grid.addWidget(self.setupButton, row, col, Qt.AlignCenter)
-        
+
         col += 1
         self.startButton = QPushButton(self)
         self.startButton.setText('Start')
         self.startButton.setEnabled(False)
         self.startButton.clicked.connect(self.start)
         grid.addWidget(self.startButton, row, col, Qt.AlignCenter)
-        
+
         row += 1
         self.stopButton = QPushButton(self)
         self.stopButton.setText('Stop')
         self.stopButton.setEnabled(False)
         self.stopButton.clicked.connect(self.stop)
         grid.addWidget(self.stopButton, row, col, Qt.AlignCenter)
-        
+
         row += 1
         col = 0
         self.statusBar = QStatusBar(self)
         self.statusBar.setSizeGripEnabled(False)
         grid.addWidget(self.statusBar, row, col, -1, -1)
-        
+
         row = 0
         col = 1
         self.startFInput = QLineEdit(self)
         self.startFInput.setValidator(QDoubleValidator())
         self.startFInput.setText('980')
         grid.addWidget(self.startFInput, row, col, Qt.AlignCenter)
-        
+
         row += 1
         self.stopFInput = QLineEdit(self)
         self.stopFInput.setValidator(QDoubleValidator())
         self.stopFInput.setText('1020')
         grid.addWidget(self.stopFInput, row, col, Qt.AlignCenter)
-        
+
         row += 1
         self.rbwInput = QLineEdit(self)
         self.rbwInput.setText('10000')
         self.rbwInput.setValidator(QDoubleValidator())
         grid.addWidget(self.rbwInput, row, col, Qt.AlignCenter)
-        
+
         row += 1
         self.rlInput = QLineEdit(self)
         self.rlInput.setText('0')
         self.rbwInput.setValidator(QDoubleValidator())
         grid.addWidget(self.rlInput, row, col, Qt.AlignCenter)
-        
+
         row += 1
         tLengthOptions = ['801', '2401', '4001', '8001', '10401', '16001',
                           '32001', '64001']
         self.tLengthInput = QComboBox(self)
         self.tLengthInput.addItems(tLengthOptions)
         grid.addWidget(self.tLengthInput, row, col, Qt.AlignCenter)
-        
+
         row += 1
         unitOptions = ['dBm', 'W', 'Vrms', 'Arms', 'dBmV']
         self.unitInput = QComboBox(self)
         self.unitInput.addItems(unitOptions)
         grid.addWidget(self.unitInput, row, col, Qt.AlignCenter)
-        
+
         row += 1
         portList = list_serial_ports()
         self.comPortInput = QComboBox(self)
         self.comPortInput.addItems(portList)
         self.comPortInput.setCurrentIndex(3)
         grid.addWidget(self.comPortInput, row, col, Qt.AlignCenter)
-        
+
         row += 1
         baudOptions = ['4800', '9600', '14400', '19200', '38400', '57600',
                        '115200']
         self.baudInput = QComboBox(self)
         self.baudInput.addItems(baudOptions)
         grid.addWidget(self.baudInput, row, col, Qt.AlignCenter)
-        
+
         row += 1
         self.fileNameInput = QLineEdit(self)
         self.fileNameInput.setText(
             'output.csv')
         grid.addWidget(self.fileNameInput, row, col, Qt.AlignCenter)
-        
+
         row += 1
         self.timeIntInput = QLineEdit(self)
         self.timeIntInput.setText('1')
         self.timeIntInput.setValidator(QIntValidator())
         grid.addWidget(self.timeIntInput, row, col, Qt.AlignCenter)
-        
+
         self.show()
-    
+
     def setup(self):
         self.statusBar.showMessage('Setting up RSA...')
-        
+
         self.acqTimer = QTimer()
         self.acqTimer.timeout.connect(self.operation)
         self.acqTimer.stop()
         self.acqCounter = 1
-        
+
         startFreq = float(self.startFInput.text())
         stopFreq = float(self.stopFInput.text())
         rbw = float(self.rbwInput.text())
@@ -164,7 +166,7 @@ class Window(QWidget):
         baudRate = int(self.baudInput.currentText())
         fileName = self.fileNameInput.text()
         timeInterval = float(self.timeIntInput.text())
-        
+
         try:
             self.session = Monitoring_Session(startFreq, stopFreq, rbw,
                                               traceLength, verticalUnit,
@@ -174,11 +176,11 @@ class Window(QWidget):
             self.startButton.setEnabled(True)
             self.activate_settings(False)
             self.statusBar.showMessage(self.session.statusText)
-        
+
         except (RSAError, GPSError, AttributeError, FileNotFoundError,
                 PermissionError, serial.serialutil.SerialException) as err:
             self.statusBar.showMessage(str(err), self.msgDuration)
-        
+
     def operation(self):
         self.statusBar.showMessage('Capturing acquisition {}'.format(
             self.acqCounter), self.msgDuration)
@@ -194,7 +196,7 @@ class Window(QWidget):
             raise
         except queue.Empty:
             self.statusBar.showMessage('Queue is empty, waiting for next acquisition.')
-    
+
     def activate_settings(self, active):
         self.startFInput.setEnabled(active)
         self.stopFInput.setEnabled(active)
@@ -207,7 +209,7 @@ class Window(QWidget):
         self.fileNameInput.setEnabled(active)
         self.timeIntInput.setEnabled(active)
         self.setupButton.setEnabled(active)
-    
+
     def start(self):
         self.session.gpsThread.start()
         self.operation()
@@ -215,7 +217,7 @@ class Window(QWidget):
         self.activate_settings(False)
         self.startButton.setEnabled(False)
         self.stopButton.setEnabled(True)
-    
+
     def stop(self):
         self.statusBar.showMessage('Acquisition stopped', self.msgDuration)
         self.activate_settings(True)
@@ -223,7 +225,7 @@ class Window(QWidget):
         self.acqTimer.stop()
         self.session.gpsThread.stop()
         rsa.DEVICE_Stop()
-    
+
     def check_rsa_connection(self):
         try:
             self.session.check_connect()
@@ -235,7 +237,7 @@ class Window(QWidget):
 def main():
     app = QApplication(sys.argv)
     GUI = Window()
-    
+
     sys.exit(app.exec_())
 
 
